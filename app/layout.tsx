@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SoundGrab - FreeSound Downloader",
+  title: "SoundGrab v0.16 - FreeSound Downloader",
   description: "Search and download sounds from FreeSound by style",
 };
 

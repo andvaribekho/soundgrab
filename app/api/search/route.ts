@@ -20,15 +20,34 @@ interface FreesoundSearchResponse {
   previous: string | null;
 }
 
+function normalizeFreesoundLicense(license: string): string {
+  const l = license.trim().toLowerCase();
+
+  if (!l) return "Unknown";
+  if (l.includes("publicdomain/zero") || l.includes("cc0") || l.includes("creative commons 0")) return "CC0";
+  if (l.includes("licenses/by-nc-sa")) return "CC-BY-NC-SA";
+  if (l.includes("licenses/by-nc")) return "CC-BY-NC";
+  if (l.includes("licenses/by-sa")) return "CC-BY-SA";
+  if (l.includes("licenses/by")) return "CC-BY";
+  if (l.includes("sampling+")) return "Sampling+";
+  if (l.includes("sampling")) return "Sampling";
+
+  return license;
+}
+
+function normalizeSound(sound: SoundResult): SoundResult {
+  return { ...sound, license: normalizeFreesoundLicense(sound.license) };
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { term, style, count = 4 } = await req.json();
+    const { term, style, count = 4, useVariants = true } = await req.json();
 
     if (!term) {
       return NextResponse.json({ error: "Term is required" }, { status: 400 });
     }
 
-    const variants = generateVariants(term);
+    const variants = useVariants ? generateVariants(term) : [term.trim()];
     const stylePart = style ? ` ${style.trim()}` : "";
     const seenIds = new Set<number>();
     const merged: SoundResult[] = [];
@@ -56,7 +75,7 @@ export async function POST(req: NextRequest) {
           for (const sound of data.results || []) {
             if (!seenIds.has(sound.id) && merged.length < count) {
               seenIds.add(sound.id);
-              merged.push(sound);
+              merged.push(normalizeSound(sound));
             }
           }
         }
@@ -85,7 +104,7 @@ export async function POST(req: NextRequest) {
             for (const sound of data.results || []) {
               if (!seenIds.has(sound.id) && merged.length < count) {
                 seenIds.add(sound.id);
-                merged.push(sound);
+                merged.push(normalizeSound(sound));
               }
             }
           }
