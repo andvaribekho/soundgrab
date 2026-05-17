@@ -807,6 +807,35 @@ td input.name-input:focus {
   cursor: not-allowed;
 }
 
+/* Floating stop button */
+.stop-float {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.5rem;
+  z-index: 998;
+}
+
+.stop-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #3a1010;
+  border-radius: 8px;
+  background: #1a0a0a;
+  color: #ff6666;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.stop-btn:hover {
+  background: #2a1010;
+  color: #ff8888;
+  border-color: #5a2020;
+}
+
 /* Crop button on cards */
 .btn-card-crop {
   background: #1a2b1a;

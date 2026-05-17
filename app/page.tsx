@@ -279,6 +279,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [clearConfirm, setClearConfirm] = useState(false);
   const [showAllWaveforms, setShowAllWaveforms] = useState(true);
+  const [randomResults, setRandomResults] = useState(false);
   const [playingSoundUids, setPlayingSoundUids] = useState<Set<string>>(
     () => new Set()
   );
@@ -953,6 +954,7 @@ export default function Home() {
               term: query,
               count: perEntry,
               useVariants: entry.useVariants,
+              random: randomResults,
             }),
           });
 
@@ -974,7 +976,7 @@ export default function Home() {
           const ogaRes = await fetch("/api/oga-search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query, count: perEntry, useVariants: entry.useVariants }),
+            body: JSON.stringify({ query, count: perEntry, useVariants: entry.useVariants, random: randomResults }),
           });
 
           if (!ogaRes.ok) {
@@ -994,7 +996,7 @@ export default function Home() {
           const sbRes = await fetch("/api/soundbible-search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query, count: perEntry, useVariants: entry.useVariants }),
+            body: JSON.stringify({ query, count: perEntry, useVariants: entry.useVariants, random: randomResults }),
           });
 
           if (!sbRes.ok) {
@@ -1014,7 +1016,7 @@ export default function Home() {
           const sonnissRes = await fetch("/api/sonniss-search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query, count: perEntry, useVariants: entry.useVariants }),
+            body: JSON.stringify({ query, count: perEntry, useVariants: entry.useVariants, random: randomResults }),
           });
 
           if (!sonnissRes.ok) {
@@ -1099,6 +1101,26 @@ export default function Home() {
     return `${s}.${ms.toString().padStart(2, "0")}s`;
   };
 
+  const stopAllSounds = () => {
+    document.querySelectorAll("audio").forEach((a) => {
+      a.pause();
+      a.currentTime = 0;
+    });
+    if (packAudioRef.current) {
+      packAudioRef.current.pause();
+      packAudioRef.current = null;
+    }
+    if (cropAudioRef.current) {
+      cropAudioRef.current.pause();
+      cropAudioRef.current = null;
+    }
+    setPlayingSoundUids(new Set());
+    setPackPlayingUid(null);
+    setCropPlaying(false);
+    setCropPreviewIdx(null);
+    showToast("All sounds stopped");
+  };
+
   return (
     <div className="container" ref={containerRef}>
       {/* Floating pack button */}
@@ -1167,6 +1189,16 @@ export default function Home() {
             )}
           </div>
         )}
+      </div>
+
+      {/* Floating stop button */}
+      <div className="stop-float">
+        <button className="stop-btn" onClick={stopAllSounds} title="Stop all sounds">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+          </svg>
+          Stop all
+        </button>
       </div>
 
       {/* Toast */}
@@ -1320,7 +1352,7 @@ export default function Home() {
         </div>
       )}
 
-      <h1>SoundGrab 0.42</h1>
+      <h1>SoundGrab 0.45</h1>
       <p className="subtitle">
         Search FreeSound, OpenGameArt, SoundBible &amp; Sonniss by style and download sounds in bulk
         &mdash;{" "}
@@ -1353,6 +1385,15 @@ export default function Home() {
             style={{ accentColor: "#6c5ce7", width: 15, height: 15 }}
           />
           Waveform
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", cursor: "pointer", fontSize: "0.82rem", color: "#aaa" }}>
+          <input
+            type="checkbox"
+            checked={randomResults}
+            onChange={(e) => setRandomResults(e.target.checked)}
+            style={{ accentColor: "#6c5ce7", width: 15, height: 15 }}
+          />
+          Random
         </label>
       </div>
 

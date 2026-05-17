@@ -68,6 +68,15 @@ function parseDuration(length?: string): number {
   return 0;
 }
 
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 function matchesQuery(name: string, query: string): boolean {
   const haystack = name.toLowerCase().replace(/[_\-.,]+/g, " ");
   const words = query.toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
@@ -115,7 +124,7 @@ async function fetchMetadata(identifier: string): Promise<MatchedFile[]> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { query, count = 4, useVariants = false } = await req.json();
+    const { query, count = 4, useVariants = false, random = false } = await req.json();
 
     if (!query) {
       return NextResponse.json({ error: "Query is required" }, { status: 400 });
@@ -130,9 +139,10 @@ export async function POST(req: NextRequest) {
 
     const seen = new Set<string>();
     const matched: MatchedFile[] = [];
+    const fetchSize = random ? Math.min(count * 3, 100) : count;
 
     for (const variant of variants) {
-      if (matched.length >= count) break;
+      if (matched.length >= fetchSize) break;
       const variantMatches = preferPreviewFile(
         allFiles.filter(({ file }) => isAudioFile(file) && matchesQuery(file.name || "", variant))
       );
@@ -141,12 +151,14 @@ export async function POST(req: NextRequest) {
         if (!seen.has(key)) {
           seen.add(key);
           matched.push(m);
-          if (matched.length >= count) break;
+          if (matched.length >= fetchSize) break;
         }
       }
     }
 
-    const results: SonnissResult[] = matched.slice(0, count).map((file) => {
+    const pool = matched.slice(0, fetchSize);
+    const final = random ? shuffle(pool).slice(0, count) : pool.slice(0, count);
+    const results: SonnissResult[] = final.map((file) => {
       const name = file.file.name || "";
       const filename = decodeURIComponent(name.split("/").pop() || "sonniss.mp3");
       const folder = name.split("/").slice(1, -1).join(" / ");

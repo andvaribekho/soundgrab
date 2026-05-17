@@ -150,9 +150,18 @@ async function getMp3Duration(fileUrl: string): Promise<number> {
   return frame && totalSize > frame.offset ? ((totalSize - frame.offset) * 8) / frame.bitrate : 0;
 }
 
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { query, count = 4, useVariants = false } = await req.json();
+    const { query, count = 4, useVariants = false, random = false } = await req.json();
 
     if (!query) {
       return NextResponse.json({ error: "Query is required" }, { status: 400 });
@@ -161,14 +170,15 @@ export async function POST(req: NextRequest) {
     const variants = useVariants ? generateVariants(query) : [query.trim()];
     const seen = new Set<string>();
     const results: SoundBibleResult[] = [];
+    const fetchSize = random ? Math.min(count * 3, 30) : count;
 
     for (const variant of variants) {
-      if (results.length >= count) break;
+      if (results.length >= fetchSize) break;
 
       const html = await fetchSoundBibleSearch(variant);
       if (!html) continue;
 
-      const parsed = parseResults(html, count - results.length);
+      const parsed = parseResults(html, fetchSize - results.length);
       for (const r of parsed) {
         if (!seen.has(r.id)) {
           seen.add(r.id);
@@ -183,8 +193,10 @@ export async function POST(req: NextRequest) {
       })
     );
 
+    const finalResults = random ? shuffle(results).slice(0, count) : results.slice(0, count);
+
     return NextResponse.json({
-      results: results.slice(0, count),
+      results: finalResults,
       searchUrl: `${SOUNDBIBLE_BASE}/search.php?q=${encodeURIComponent(query)}`,
     });
   } catch (err: unknown) {

@@ -278,9 +278,18 @@ async function getAudioDuration(fileUrl: string): Promise<number> {
   return 0;
 }
 
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { query, count = 4, useVariants = false } = await req.json();
+    const { query, count = 4, useVariants = false, random = false } = await req.json();
 
     if (!query) {
       return NextResponse.json({ error: "Query is required" }, { status: 400 });
@@ -289,15 +298,17 @@ export async function POST(req: NextRequest) {
     const variants = useVariants ? generateVariants(query) : [query.trim()];
     const seen = new Set<string>();
     const results: OgaResult[] = [];
+    const fetchSize = random ? Math.min(count * 3, 50) : count;
+    const extraLinks = random ? 12 : 8;
 
     for (const variant of variants) {
-      if (results.length >= count) break;
+      if (results.length >= fetchSize) break;
 
       const searchHtml = await fetchOgaSearchPage(variant);
       if (!searchHtml) continue;
 
       const links = parseSearchResults(searchHtml);
-      const candidateLinks = links.slice(0, count + 8);
+      const candidateLinks = links.slice(0, fetchSize + extraLinks);
 
       const pageResults = await Promise.allSettled(
         candidateLinks.map(async (link) => {
@@ -314,7 +325,7 @@ export async function POST(req: NextRequest) {
       );
 
       for (const r of pageResults) {
-        if (results.length >= count) break;
+        if (results.length >= fetchSize) break;
         if (r.status === "fulfilled" && r.value && !seen.has(r.value.id)) {
           seen.add(r.value.id);
           results.push(r.value);
@@ -330,8 +341,10 @@ export async function POST(req: NextRequest) {
       })
     );
 
+    const finalResults = random ? shuffle(results).slice(0, count) : results.slice(0, count);
+
     return NextResponse.json({
-      results: results.slice(0, count),
+      results: finalResults,
       searchUrl: `${OGA_BASE}/art-search-advanced?keys=${encodeURIComponent(query)}&field_art_type_tid[]=13`,
     });
   } catch (err: unknown) {
