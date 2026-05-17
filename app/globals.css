@@ -104,6 +104,48 @@ h1 {
   border-color: #5a4bd1;
 }
 
+.custom-style-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 20px;
+  background: #1a1a1a;
+  overflow: hidden;
+}
+
+.custom-style-input {
+  width: 100px;
+  padding: 0.3rem 0.5rem 0.3rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: #e0e0e0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  outline: none;
+}
+
+.custom-style-input::placeholder {
+  color: #555;
+}
+
+.custom-style-plus {
+  padding: 0.3rem 0.6rem;
+  border: none;
+  border-left: 1px solid #2a2a2a;
+  background: #6c5ce7;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s;
+}
+
+.custom-style-plus:hover {
+  background: #5a4bd1;
+}
+
 /* Source checkboxes */
 .source-row {
   display: flex;
@@ -321,6 +363,16 @@ td input.name-input:focus {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #1a1a1a;
+  color: #aaa;
+}
+
+.btn-secondary:hover {
+  background: #222;
+  color: #ddd;
 }
 
 /* Results */

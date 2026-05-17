@@ -264,6 +264,7 @@ function encodeWav(audioBuffer: AudioBuffer): Blob {
 
 export default function Home() {
   const [style, setStyle] = useState("");
+  const [customStyleInput, setCustomStyleInput] = useState("");
   const [perEntry, setPerEntry] = useState(4);
   const [useFreeSound, setUseFreeSound] = useState(true);
   const [useOga, setUseOga] = useState(false);
@@ -276,11 +277,13 @@ export default function Home() {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [groupedResults, setGroupedResults] = useState<GroupedResults[]>([]);
   const [error, setError] = useState("");
-  const [showAllWaveforms, setShowAllWaveforms] = useState(false);
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const [showAllWaveforms, setShowAllWaveforms] = useState(true);
   const [playingSoundUids, setPlayingSoundUids] = useState<Set<string>>(
     () => new Set()
   );
   const containerRef = useRef<HTMLDivElement>(null);
+  const focusEntryIdRef = useRef<string | null>(null);
 
   // Pack state
   const [pack, setPack] = useState<PackItem[]>([]);
@@ -832,8 +835,17 @@ export default function Home() {
   };
 
   const addRow = () => {
-    setEntries((prev) => [...prev, { id: crypto.randomUUID(), name: "", useVariants: false }]);
+    const newId = crypto.randomUUID();
+    setEntries((prev) => [...prev, { id: newId, name: "", useVariants: false }]);
+    focusEntryIdRef.current = newId;
   };
+
+  const clearAll = () => {
+    setGroupedResults([]);
+    setEntries([{ id: crypto.randomUUID(), name: "", useVariants: false }]);
+    setError("");
+  };
+
 
   const removeRow = (id: string) => {
     setEntries((prev) => {
@@ -1308,7 +1320,7 @@ export default function Home() {
         </div>
       )}
 
-      <h1>SoundGrab 0.38</h1>
+      <h1>SoundGrab 0.42</h1>
       <p className="subtitle">
         Search FreeSound, OpenGameArt, SoundBible &amp; Sonniss by style and download sounds in bulk
         &mdash;{" "}
@@ -1354,6 +1366,33 @@ export default function Home() {
             {preset}
           </button>
         ))}
+        <div className="custom-style-wrap">
+          <input
+            className="custom-style-input"
+            type="text"
+            value={customStyleInput}
+            onChange={(e) => setCustomStyleInput(e.target.value)}
+            placeholder="add custom"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && customStyleInput.trim()) {
+                e.preventDefault();
+                setStyle(customStyleInput.trim());
+                setCustomStyleInput("");
+              }
+            }}
+          />
+          <button
+            className="custom-style-plus"
+            onClick={() => {
+              if (customStyleInput.trim()) {
+                setStyle(customStyleInput.trim());
+                setCustomStyleInput("");
+              }
+            }}
+          >
+            +
+          </button>
+        </div>
       </div>
 
       <div className="source-row">
@@ -1413,6 +1452,12 @@ export default function Home() {
                       value={entry.name}
                       onChange={(e) => updateName(entry.id, e.target.value)}
                       placeholder="e.g. jump, laser, explosion..."
+                      ref={(el) => {
+                        if (el && focusEntryIdRef.current === entry.id) {
+                          el.focus();
+                          focusEntryIdRef.current = null;
+                        }
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
@@ -1490,7 +1535,35 @@ export default function Home() {
             ? `Fetching... (${progress.current}/${progress.total})`
             : "Search & Fetch"}
         </button>
+        <button
+          className="btn btn-add"
+          style={{ marginLeft: "auto" }}
+          onClick={() => setClearConfirm(true)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{verticalAlign:"middle",marginRight:4}}>
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+            <line x1="10" y1="11" x2="10" y2="17" />
+            <line x1="14" y1="11" x2="14" y2="17" />
+          </svg>
+          Clear
+        </button>
       </div>
+
+      {/* ─── Clear Confirm Overlay ─── */}
+      {clearConfirm && (
+        <div className="crop-overlay" onClick={() => setClearConfirm(false)}>
+          <div className="crop-confirm-overlay">
+            <div className="crop-confirm-box">
+              <span>Clear results?</span>
+              <div className="crop-confirm-btns">
+                <button className="btn btn-primary" onClick={() => { clearAll(); setClearConfirm(false); }}>Yes</button>
+                <button className="btn btn-secondary" onClick={() => setClearConfirm(false)}>No</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && <div className="error-msg">{error}</div>}
 
