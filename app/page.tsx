@@ -504,6 +504,11 @@ export default function Home() {
       ctx.font = "10px monospace";
       ctx.fillText(`sel: ${formatTime(cropStart)} - ${formatTime(cropEnd)} (${formatTime(cropEnd - cropStart)})`, 8, h - 14);
       ctx.fillText(`zoom: ${(cropViewEnd - cropViewStart).toFixed(1)}s`, w - 100, h - 14);
+      ctx.fillStyle = "#fff";
+      ctx.font = "10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("SPACE to play, ESC to exit", w / 2, h - 14);
+      ctx.textAlign = "start";
       return;
     }
 
@@ -566,6 +571,11 @@ export default function Home() {
     ctx.font = "10px monospace";
     ctx.fillText(`sel: ${formatTime(cropStart)} - ${formatTime(cropEnd)} (${formatTime(cropEnd - cropStart)})`, 8, h - 14);
     ctx.fillText(`zoom: ${viewLen.toFixed(1)}s`, w - 100, h - 14);
+    ctx.fillStyle = "#fff";
+    ctx.font = "18px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("SPACE to play, ESC to exit", w / 2, h - 14);
+    ctx.textAlign = "start";
   }, [cropBuffer, cropStart, cropEnd, cropViewStart, cropViewEnd, cropPlaying]);
 
   useEffect(() => {
@@ -1345,14 +1355,11 @@ export default function Home() {
                 </div>
               </div>
             )}
-            <div className="crop-hint">
-              Drag handles to select | Wheel to zoom | Middle-click to pan | Click outside selection to move
-            </div>
           </div>
         </div>
       )}
 
-      <h1>SoundGrab 0.45</h1>
+      <h1>SoundGrab 0.51</h1>
       <p className="subtitle">
         Search FreeSound, OpenGameArt, SoundBible &amp; Sonniss by style and download sounds in bulk
         &mdash;{" "}
@@ -1377,7 +1384,7 @@ export default function Home() {
           max={50}
           style={{ maxWidth: "70px" }}
         />
-        <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginLeft: "1.5rem", cursor: "pointer", fontSize: "0.82rem", color: "#aaa" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginLeft: "1.5rem", cursor: "pointer", fontSize: "0.82rem", color: "#aaa" }} title="Display waveforms of all sounds">
           <input
             type="checkbox"
             checked={showAllWaveforms}
@@ -1386,7 +1393,7 @@ export default function Home() {
           />
           Waveform
         </label>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", cursor: "pointer", fontSize: "0.82rem", color: "#aaa" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", cursor: "pointer", fontSize: "0.82rem", color: "#aaa" }} title="Pick random results from the source, not the first ones">
           <input
             type="checkbox"
             checked={randomResults}
