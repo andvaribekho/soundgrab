@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { generateVariants } from "@/lib/variants";
 
 const OGA_BASE = "https://opengameart.org";
 
@@ -177,6 +178,14 @@ async function getContentLength(fileUrl: string): Promise<number> {
   }
 }
 
+async function getContentLengthAndFirst(fileUrl: string): Promise<{ totalSize: number; first: ArrayBuffer | null }> {
+  const [totalSize, first] = await Promise.all([
+    getContentLength(fileUrl),
+    fetchRange(fileUrl, 0, 262143),
+  ]);
+  return { totalSize, first };
+}
+
 function getWavDuration(header: ArrayBuffer, totalSize: number): number {
   const view = new DataView(header);
   if (view.byteLength < 44 || view.getUint32(0) !== 0x52494646 || view.getUint32(8) !== 0x57415645) return 0;
@@ -250,8 +259,7 @@ function getOggDuration(first: ArrayBuffer, last: ArrayBuffer): number {
 }
 
 async function getAudioDuration(fileUrl: string): Promise<number> {
-  const totalSize = await getContentLength(fileUrl);
-  const first = await fetchRange(fileUrl, 0, 262143);
+  const { totalSize, first } = await getContentLengthAndFirst(fileUrl);
   if (!first) return 0;
 
   if (/\.wav(?:$|\?)/i.test(fileUrl)) return getWavDuration(first, totalSize);
@@ -272,48 +280,58 @@ async function getAudioDuration(fileUrl: string): Promise<number> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { query, count = 4 } = await req.json();
+    const { query, count = 4, useVariants = false } = await req.json();
 
     if (!query) {
       return NextResponse.json({ error: "Query is required" }, { status: 400 });
     }
 
-    // Search OGA
-    const searchHtml = await fetchOgaSearchPage(query);
-    if (!searchHtml) {
-      return NextResponse.json({ results: [], searchUrl: "" });
-    }
-
-    const links = parseSearchResults(searchHtml);
+    const variants = useVariants ? generateVariants(query) : [query.trim()];
+    const seen = new Set<string>();
     const results: OgaResult[] = [];
 
-    for (const link of links) {
+    for (const variant of variants) {
       if (results.length >= count) break;
 
-      try {
-        const pageHtml = await fetchOgaContentPage(link.slug);
-        if (pageHtml) {
+      const searchHtml = await fetchOgaSearchPage(variant);
+      if (!searchHtml) continue;
+
+      const links = parseSearchResults(searchHtml);
+      const candidateLinks = links.slice(0, count + 8);
+
+      const pageResults = await Promise.allSettled(
+        candidateLinks.map(async (link) => {
+          if (seen.has(link.slug)) return null;
+          const pageHtml = await fetchOgaContentPage(link.slug);
+          if (!pageHtml) return null;
           const parsed = parseContentPage(pageHtml);
-          if (parsed && parsed.files.length > 0) {
-            // Override title/URL with what we found from search
-            parsed.title = link.title;
-            parsed.url = `${OGA_BASE}/content/${link.slug}`;
-            parsed.id = link.slug;
-            // Get duration from first audio file
-            if (parsed.files[0]) {
-              const dur = await getAudioDuration(parsed.files[0].url);
-              parsed.duration = dur;
-            }
-            results.push(parsed);
-          }
+          if (!parsed || parsed.files.length === 0) return null;
+          parsed.title = link.title;
+          parsed.url = `${OGA_BASE}/content/${link.slug}`;
+          parsed.id = link.slug;
+          return parsed;
+        })
+      );
+
+      for (const r of pageResults) {
+        if (results.length >= count) break;
+        if (r.status === "fulfilled" && r.value && !seen.has(r.value.id)) {
+          seen.add(r.value.id);
+          results.push(r.value);
         }
-      } catch {
-        // Skip individual page errors
       }
     }
 
+    await Promise.allSettled(
+      results.map(async (parsed) => {
+        if (parsed.files[0]) {
+          parsed.duration = await getAudioDuration(parsed.files[0].url);
+        }
+      })
+    );
+
     return NextResponse.json({
-      results,
+      results: results.slice(0, count),
       searchUrl: `${OGA_BASE}/art-search-advanced?keys=${encodeURIComponent(query)}&field_art_type_tid[]=13`,
     });
   } catch (err: unknown) {

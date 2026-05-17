@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SoundGrab v0.16 - FreeSound Downloader",
-  description: "Search and download sounds from FreeSound by style",
+  title: "SoundGrab 0.3 - Sound Downloader",
+  description: "Search and download sounds from FreeSound, OpenGameArt, SoundBible, and Sonniss by style",
 };
 
 export default function RootLayout({

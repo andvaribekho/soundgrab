@@ -2,9 +2,14 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 
+function proxyUrl(url: string): string {
+  return `/api/audio-proxy?url=${encodeURIComponent(url)}`;
+}
+
 interface SoundEntry {
   id: string;
   name: string;
+  useVariants: boolean;
 }
 
 interface SoundResult {
@@ -23,7 +28,32 @@ interface OgaResult {
   url: string;
   tags: string[];
   license: string;
+  duration: number;
   files: { url: string; name: string; size: string }[];
+}
+
+interface SoundBibleResult {
+  id: string;
+  title: string;
+  author: string;
+  url: string;
+  audioUrl: string;
+  filename: string;
+  description: string;
+  license: string;
+  duration: number;
+}
+
+interface SonnissResult {
+  id: string;
+  title: string;
+  author: string;
+  url: string;
+  audioUrl: string;
+  filename: string;
+  description: string;
+  license: string;
+  duration: number;
 }
 
 interface CropItem {
@@ -51,28 +81,30 @@ interface OgaSearchResponse {
   searchUrl: string;
 }
 
+interface SoundBibleSearchResponse {
+  results: SoundBibleResult[];
+  searchUrl: string;
+}
+
+interface SonnissSearchResponse {
+  results: SonnissResult[];
+  searchUrl: string;
+}
+
 interface GroupedResults {
   entry: SoundEntry;
   results: SoundResult[];
   variants?: string[];
   ogaResults: OgaResult[];
+  soundBibleResults: SoundBibleResult[];
+  sonnissResults: SonnissResult[];
   error?: string;
   ogaError?: string;
+  soundBibleError?: string;
+  sonnissError?: string;
 }
 
-const STYLE_PRESETS = [
-  "arcade",
-  "8-bit",
-  "game",
-  "realistic",
-  "cinematic",
-  "sci-fi",
-  "fantasy",
-  "horror",
-  "cartoon",
-  "UI",
-  "ambient",
-];
+
 
 // ─── Mini waveform component ───
 
@@ -95,7 +127,7 @@ function MiniWaveform({
 
     (async () => {
       try {
-        const resp = await fetch(url);
+        const resp = await fetch(proxyUrl(url));
         const buf = await resp.arrayBuffer();
         const ctx = new AudioContext();
         const audioBuf = await ctx.decodeAudioData(buf);
@@ -198,12 +230,13 @@ function encodeWav(audioBuffer: AudioBuffer): Blob {
 }
 
 export default function Home() {
-  const [style, setStyle] = useState("");
   const [perEntry, setPerEntry] = useState(4);
   const [useFreeSound, setUseFreeSound] = useState(true);
   const [useOga, setUseOga] = useState(false);
+  const [useSoundBible, setUseSoundBible] = useState(false);
+  const [useSonniss, setUseSonniss] = useState(false);
   const [entries, setEntries] = useState<SoundEntry[]>([
-    { id: crypto.randomUUID(), name: "" },
+    { id: crypto.randomUUID(), name: "", useVariants: true },
   ]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -218,9 +251,13 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [downloadingZip, setDownloadingZip] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [packPlayingUid, setPackPlayingUid] = useState<string | null>(null);
+  const packAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Crop state
   const [cropOpen, setCropOpen] = useState(false);
+  const [cropExitConfirm, setCropExitConfirm] = useState(false);
+  const [cropWaveformLoading, setCropWaveformLoading] = useState(false);
   const [cropUrl, setCropUrl] = useState("");
   const [cropName, setCropName] = useState("");
   const [cropBuffer, setCropBuffer] = useState<AudioBuffer | null>(null);
@@ -266,8 +303,29 @@ export default function Home() {
   };
 
   const removeFromPack = (uid: string) => {
+    if (packPlayingUid === uid) {
+      packAudioRef.current?.pause();
+      packAudioRef.current = null;
+      setPackPlayingUid(null);
+    }
     setPack((prev) => prev.filter((p) => p.uid !== uid));
     showToast("sound removed from pack");
+  };
+
+  const togglePackPreview = (item: PackItem) => {
+    if (packPlayingUid === item.uid) {
+      packAudioRef.current?.pause();
+      packAudioRef.current = null;
+      setPackPlayingUid(null);
+      return;
+    }
+    packAudioRef.current?.pause();
+    const audio = new Audio(item.url);
+    audio.volume = 0.8;
+    audio.onended = () => setPackPlayingUid(null);
+    audio.play().catch(() => setPackPlayingUid(null));
+    packAudioRef.current = audio;
+    setPackPlayingUid(item.uid);
   };
 
   const downloadPack = async () => {
@@ -303,13 +361,16 @@ export default function Home() {
     setCropPlaying(false);
     setCropLoop(false);
     setCropList([]);
+    setCropBuffer(null);
     setCropAudioDuration(1);
+    setCropWaveformLoading(true);
     cropCounterRef.current = 0;
+    setCropExitConfirm(false);
     setCropOpen(true);
 
     let decoded = false;
     try {
-      const resp = await fetch(url);
+      const resp = await fetch(proxyUrl(url));
       const arrayBuf = await resp.arrayBuffer();
       const audioCtx = new AudioContext();
       const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
@@ -328,6 +389,7 @@ export default function Home() {
       setCropEnd(cropAudioDuration);
       setCropViewStart(0);
       setCropViewEnd(cropAudioDuration);
+      setCropWaveformLoading(false);
     }
   };
 
@@ -345,12 +407,18 @@ export default function Home() {
   }, [cropBuffer]);
 
   const closeCrop = () => {
-    cropAudioRef.current?.pause();
-    cropAudioRef.current = null;
-    setCropOpen(false);
-    setCropBuffer(null);
-    setCropPlaying(false);
-    if (cropAnimRef.current) cancelAnimationFrame(cropAnimRef.current);
+    if (cropExitConfirm) {
+      setCropExitConfirm(false);
+      cropAudioRef.current?.pause();
+      cropAudioRef.current = null;
+      setCropOpen(false);
+      setCropBuffer(null);
+      setCropPlaying(false);
+      setCropWaveformLoading(false);
+      if (cropAnimRef.current) cancelAnimationFrame(cropAnimRef.current);
+    } else {
+      setCropExitConfirm(true);
+    }
   };
 
   const timeToX = (t: number, w: number) => {
@@ -450,7 +518,12 @@ export default function Home() {
     ctx.fillText(`zoom: ${viewLen.toFixed(1)}s`, w - 100, h - 14);
   }, [cropBuffer, cropStart, cropEnd, cropViewStart, cropViewEnd, cropPlaying]);
 
-  useEffect(() => { if (cropOpen && cropBuffer) drawWaveform(); }, [cropOpen, cropBuffer, cropStart, cropEnd, cropViewStart, cropViewEnd, cropPlaying, drawWaveform]);
+  useEffect(() => {
+    if (cropOpen && cropBuffer) {
+      drawWaveform();
+      setCropWaveformLoading(false);
+    }
+  }, [cropOpen, cropBuffer, cropStart, cropEnd, cropViewStart, cropViewEnd, cropPlaying, drawWaveform]);
 
   useEffect(() => {
     if (!cropPlaying || !cropCanvasRef.current) return;
@@ -474,6 +547,27 @@ export default function Home() {
     audio.play().catch(() => {});
     setCropPlaying(true);
   };
+
+  const playCropSelectionRef = useRef(playCropSelection);
+  playCropSelectionRef.current = playCropSelection;
+  const closeCropRef = useRef(closeCrop);
+  closeCropRef.current = closeCrop;
+
+  useEffect(() => {
+    if (!cropOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        playCropSelectionRef.current();
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeCropRef.current();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [cropOpen]);
 
   useEffect(() => {
     if (!cropBuffer) return;
@@ -616,7 +710,7 @@ export default function Home() {
   const downloadCropped = async () => {
     if (!cropUrl) return;
     try {
-      const resp = await fetch(cropUrl);
+      const resp = await fetch(proxyUrl(cropUrl));
       const arrayBuf = await resp.arrayBuffer();
       const audioCtx = new AudioContext();
       const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
@@ -654,7 +748,7 @@ export default function Home() {
       const JSZip = (await import("jszip")).default;
       const zip = new JSZip();
       const baseName = cropName.replace(/\.[^.]+$/, "");
-      const resp = await fetch(cropUrl);
+      const resp = await fetch(proxyUrl(cropUrl));
       const arrayBuf = await resp.arrayBuffer();
       const audioCtx = new AudioContext();
       const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
@@ -692,7 +786,7 @@ export default function Home() {
   };
 
   const addRow = () => {
-    setEntries((prev) => [...prev, { id: crypto.randomUUID(), name: "" }]);
+    setEntries((prev) => [...prev, { id: crypto.randomUUID(), name: "", useVariants: true }]);
   };
 
   const removeRow = (id: string) => {
@@ -729,7 +823,7 @@ export default function Home() {
     if (allTerms.length === 0) return;
 
     e.preventDefault();
-    setEntries(allTerms.map((name) => ({ id: crypto.randomUUID(), name })));
+    setEntries(allTerms.map((name) => ({ id: crypto.randomUUID(), name, useVariants: true })));
   }, []);
 
   useEffect(() => {
@@ -738,6 +832,24 @@ export default function Home() {
     el.addEventListener("paste", handlePaste);
     return () => el.removeEventListener("paste", handlePaste);
   }, [handlePaste]);
+
+  const pasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      const lines = text.split(/[\r\n]+/).map((l) => l.trim()).filter((l) => l.length > 0);
+      const allTerms: string[] = [];
+      for (const line of lines) {
+        const cols = line.split("\t").map((c) => c.trim()).filter((c) => c.length > 0);
+        allTerms.push(...cols);
+      }
+      if (allTerms.length === 0) return;
+      setEntries(allTerms.map((name) => ({ id: crypto.randomUUID(), name, useVariants: true })));
+      showToast(`Pasted ${allTerms.length} entries`);
+    } catch {
+      showToast("Clipboard access denied");
+    }
+  };
 
   const handleSearch = async () => {
     setError("");
@@ -752,7 +864,7 @@ export default function Home() {
       return;
     }
 
-    if (!useFreeSound && !useOga) {
+    if (!useFreeSound && !useOga && !useSoundBible && !useSonniss) {
       setError("Select at least one source");
       return;
     }
@@ -760,7 +872,6 @@ export default function Home() {
     setLoading(true);
     setProgress({ current: 0, total: validEntries.length });
 
-    const styleQuery = style.trim();
     const groups: GroupedResults[] = [];
 
     for (let i = 0; i < validEntries.length; i++) {
@@ -770,6 +881,8 @@ export default function Home() {
         results: [],
         variants: [],
         ogaResults: [],
+        soundBibleResults: [],
+        sonnissResults: [],
       };
 
       if (useFreeSound) {
@@ -779,8 +892,8 @@ export default function Home() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               term: entry.name.trim(),
-              style: styleQuery,
               count: perEntry,
+              useVariants: entry.useVariants,
             }),
           });
 
@@ -799,14 +912,10 @@ export default function Home() {
 
       if (useOga) {
         try {
-          const fsQuery = styleQuery
-            ? `${entry.name.trim()} ${styleQuery}`
-            : entry.name.trim();
-
           const ogaRes = await fetch("/api/oga-search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: fsQuery, count: perEntry }),
+            body: JSON.stringify({ query: entry.name.trim(), count: perEntry, useVariants: entry.useVariants }),
           });
 
           if (!ogaRes.ok) {
@@ -818,6 +927,46 @@ export default function Home() {
           }
         } catch (err: unknown) {
           group.ogaError = err instanceof Error ? err.message : "OGA error";
+        }
+      }
+
+      if (useSoundBible) {
+        try {
+          const sbRes = await fetch("/api/soundbible-search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: entry.name.trim(), count: perEntry, useVariants: entry.useVariants }),
+          });
+
+          if (!sbRes.ok) {
+            const sbErr = await sbRes.json();
+            group.soundBibleError = sbErr.error || "SoundBible search failed";
+          } else {
+            const sbData: SoundBibleSearchResponse = await sbRes.json();
+            group.soundBibleResults = sbData.results || [];
+          }
+        } catch (err: unknown) {
+          group.soundBibleError = err instanceof Error ? err.message : "SoundBible error";
+        }
+      }
+
+      if (useSonniss) {
+        try {
+          const sonnissRes = await fetch("/api/sonniss-search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: entry.name.trim(), count: perEntry, useVariants: entry.useVariants }),
+          });
+
+          if (!sonnissRes.ok) {
+            const sonnissErr = await sonnissRes.json();
+            group.sonnissError = sonnissErr.error || "Sonniss search failed";
+          } else {
+            const sonnissData: SonnissSearchResponse = await sonnissRes.json();
+            group.sonnissResults = sonnissData.results || [];
+          }
+        } catch (err: unknown) {
+          group.sonnissError = err instanceof Error ? err.message : "Sonniss error";
         }
       }
 
@@ -867,6 +1016,24 @@ export default function Home() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
+  const abbreviateLicense = (license: string): string => {
+    const l = license.trim();
+    if (/creative commons 0/i.test(l)) return "CC0";
+    if (/attribution noncommercial/i.test(l)) return "CC-BY-NC";
+    if (/attribution sharealike/i.test(l)) return "CC-BY-SA";
+    if (/attribution/i.test(l)) return "CC-BY";
+    if (/gpl.?3/i.test(l)) return "GPL-3";
+    if (/gpl.?2/i.test(l)) return "GPL-2";
+    if (/oga-by.?4/i.test(l)) return "OGA-BY-4";
+    if (/oga-by.?3/i.test(l)) return "OGA-BY-3";
+    if (/sonniss/i.test(l)) return "Sonniss";
+    if (/cc0/i.test(l)) return "CC0";
+    if (/public domain/i.test(l)) return "CC0";
+    // Return first word or abbreviation
+    const m = l.match(/^[A-Z]{2,}[-\d\.]*/);
+    return m ? m[0] : l.slice(0, 12);
+  };
+
   const formatTime = (t: number): string => {
     const s = Math.floor(t % 60);
     const ms = Math.floor((t % 1) * 100);
@@ -879,7 +1046,7 @@ export default function Home() {
       <div className="pack-float">
         <button
           className={`pack-toggle ${pack.length > 0 ? "pack-has-items" : ""}`}
-          onClick={() => setPackOpen(!packOpen)}
+          onClick={() => { if (packOpen) { packAudioRef.current?.pause(); packAudioRef.current = null; setPackPlayingUid(null); } setPackOpen(!packOpen); }}
           title="Download pack"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -898,7 +1065,7 @@ export default function Home() {
               <span>Sound Pack ({pack.length})</span>
               <button
                 className="pack-close"
-                onClick={() => setPackOpen(false)}
+                onClick={() => { packAudioRef.current?.pause(); packAudioRef.current = null; setPackPlayingUid(null); setPackOpen(false); }}
               >
                 x
               </button>
@@ -909,6 +1076,13 @@ export default function Home() {
               <div className="pack-list">
                 {pack.map((item) => (
                   <div key={item.uid} className="pack-item">
+                    <button
+                      className={`pack-item-play ${packPlayingUid === item.uid ? "pack-item-stop" : ""}`}
+                      onClick={() => togglePackPreview(item)}
+                      title={packPlayingUid === item.uid ? "Stop" : "Play"}
+                    >
+                      {packPlayingUid === item.uid ? "\u25A0" : "\u25B6"}
+                    </button>
                     <span className="pack-item-name" title={item.name}>
                       {item.name}
                     </span>
@@ -948,17 +1122,37 @@ export default function Home() {
               <button className="crop-close" onClick={closeCrop}>x</button>
             </div>
 
-            <canvas
-              ref={cropCanvasRef}
-              className="crop-canvas"
-              width={900}
-              height={200}
-              onMouseDown={canvasMouseDown}
-              onMouseMove={canvasMouseMove}
-              onWheel={canvasWheel}
-              onContextMenu={canvasContextMenu}
-              style={{ cursor: cropCanvasCursor }}
-            />
+            {cropExitConfirm && (
+              <div className="crop-confirm-overlay">
+                <div className="crop-confirm-box">
+                  <span>Exit editor?</span>
+                  <div className="crop-confirm-btns">
+                    <button className="btn btn-primary" onClick={() => { setCropExitConfirm(false); cropAudioRef.current?.pause(); cropAudioRef.current = null; setCropOpen(false); setCropBuffer(null); setCropPlaying(false); setCropWaveformLoading(false); if (cropAnimRef.current) cancelAnimationFrame(cropAnimRef.current); }}>Yes</button>
+                    <button className="btn btn-secondary" onClick={() => setCropExitConfirm(false)}>No</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="crop-waveform-shell">
+              <canvas
+                ref={cropCanvasRef}
+                className="crop-canvas"
+                width={900}
+                height={200}
+                onMouseDown={canvasMouseDown}
+                onMouseMove={canvasMouseMove}
+                onWheel={canvasWheel}
+                onContextMenu={canvasContextMenu}
+                style={{ cursor: cropCanvasCursor }}
+              />
+              {cropWaveformLoading && (
+                <div className="crop-waveform-loading">
+                  <div className="crop-waveform-spinner" />
+                  <span>Generating waveform...</span>
+                </div>
+              )}
+            </div>
 
             <div className="crop-info">
               <span>Start: {formatTime(cropStart)}</span>
@@ -996,9 +1190,8 @@ export default function Home() {
             {cropUrl && (
               <audio
                 ref={cropAudioRef}
-                src={cropUrl}
+                src={proxyUrl(cropUrl)}
                 preload="auto"
-                crossOrigin="anonymous"
                 onLoadedMetadata={onCropAudioLoaded}
                 style={{ display: "none" }}
               />
@@ -1068,9 +1261,9 @@ export default function Home() {
         </div>
       )}
 
-      <h1>SoundGrab</h1>
+      <h1>SoundGrab 0.3</h1>
       <p className="subtitle">
-        Search FreeSound &amp; OpenGameArt by style and download sounds in bulk
+        Search FreeSound, OpenGameArt, SoundBible &amp; Sonniss and download sounds in bulk
         &mdash;{" "}
         <span style={{ color: "#6c5ce7" }}>
           Ctrl+V to paste from spreadsheet
@@ -1078,15 +1271,7 @@ export default function Home() {
       </p>
 
       <div className="style-row">
-        <label htmlFor="style">Style:</label>
-        <input
-          id="style"
-          type="text"
-          value={style}
-          onChange={(e) => setStyle(e.target.value)}
-          placeholder="e.g. arcade, 8bit, realistic, cinematic..."
-        />
-        <label htmlFor="perEntry" style={{ marginLeft: "1.5rem" }}>
+        <label htmlFor="perEntry">
           Results:
         </label>
         <input
@@ -1112,18 +1297,6 @@ export default function Home() {
         </label>
       </div>
 
-      <div className="preset-row">
-        {STYLE_PRESETS.map((preset) => (
-          <button
-            key={preset}
-            className={`preset-btn ${style === preset ? "preset-active" : ""}`}
-            onClick={() => setStyle(style === preset ? "" : preset)}
-          >
-            {preset}
-          </button>
-        ))}
-      </div>
-
       <div className="source-row">
         <label className="source-label">
           <input
@@ -1141,6 +1314,22 @@ export default function Home() {
           />
           OpenGameArt
         </label>
+        <label className="source-label">
+          <input
+            type="checkbox"
+            checked={useSoundBible}
+            onChange={(e) => setUseSoundBible(e.target.checked)}
+          />
+          SoundBible
+        </label>
+        <label className="source-label">
+          <input
+            type="checkbox"
+            checked={useSonniss}
+            onChange={(e) => setUseSonniss(e.target.checked)}
+          />
+          Sonniss
+        </label>
       </div>
 
       <div className="table-wrapper">
@@ -1149,6 +1338,7 @@ export default function Home() {
             <tr>
               <th className="row-num">#</th>
               <th>Sound Name</th>
+              <th style={{ width: 30, textAlign: "center" }} title="Include alternate search terms">ALT</th>
               <th className="col-actions"></th>
             </tr>
           </thead>
@@ -1168,6 +1358,23 @@ export default function Home() {
                         handleSearch();
                       }
                     }}
+                  />
+                </td>
+                <td style={{ textAlign: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={entry.useVariants}
+                    onChange={(e) =>
+                      setEntries((prev) =>
+                        prev.map((en) =>
+                          en.id === entry.id
+                            ? { ...en, useVariants: e.target.checked }
+                            : en
+                        )
+                      )
+                    }
+                    title="Use alternate search terms for this entry"
+                    style={{ accentColor: "#6c5ce7", width: 14, height: 14 }}
                   />
                 </td>
                 <td className="col-actions">
@@ -1191,6 +1398,13 @@ export default function Home() {
         <button className="btn btn-add" onClick={addRow}>
           + Add Row
         </button>
+        <button className="btn btn-add" onClick={pasteFromClipboard}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{verticalAlign:"middle",marginRight:4}}>
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+          </svg>
+          Paste from Sheet
+        </button>
         <button
           className="btn btn-primary"
           onClick={handleSearch}
@@ -1211,12 +1425,6 @@ export default function Home() {
           <div key={group.entry.id} className="sound-group">
             <div className="sound-group-header">
               {group.entry.name}
-              {style && (
-                <span style={{ color: "#6c5ce7", fontWeight: 400 }}>
-                  {" "}
-                  ({style})
-                </span>
-              )}
               {group.variants && group.variants.length > 0 && (
                 <span
                   style={{
@@ -1237,7 +1445,9 @@ export default function Home() {
               )}
               {!group.error &&
                 group.results.length === 0 &&
-                group.ogaResults.length === 0 && (
+                group.ogaResults.length === 0 &&
+                group.soundBibleResults.length === 0 &&
+                group.sonnissResults.length === 0 && (
                   <span style={{ color: "#666", fontWeight: 400 }}>
                     {" "}
                     &mdash; no results
@@ -1271,7 +1481,7 @@ export default function Home() {
                         </div>
                         <div className="sound-card-meta">
                           <span>{formatDuration(sound.duration)}</span>
-                          <span>{sound.license}</span>
+                          <span>{abbreviateLicense(sound.license)}</span>
                         </div>
                         {previewUrl && (
                           <div className="mini-player">
@@ -1328,15 +1538,15 @@ export default function Home() {
                               +
                             </button>
                           )}
-                          {previewUrl && (
-                            <button
-                              className="btn-card btn-card-crop"
-                              onClick={() => openCrop(previewUrl, sound.name)}
-                              title="Crop sound"
-                            >
-                              Crop
-                            </button>
-                          )}
+                            {previewUrl && (
+                              <button
+                                className={`btn-card btn-card-crop`}
+                                onClick={() => openCrop(previewUrl, sound.name)}
+                                title="Crop sound"
+                              >
+                                ✂
+                              </button>
+                            )}
                         </div>
                       </div>
                     );
@@ -1384,21 +1594,8 @@ export default function Home() {
                           {item.title}
                         </div>
                         <div className="sound-card-meta">
-                          <span>by {item.author}</span>
-                          <span>{item.license}</span>
-                        </div>
-                        <div className="sound-card-meta">
-                          {item.tags.slice(0, 3).map((t) => (
-                            <span
-                              key={t}
-                              style={{
-                                color: "#555",
-                                fontSize: "0.65rem",
-                              }}
-                            >
-                              {t}
-                            </span>
-                          ))}
+                          <span>{item.duration > 0 ? formatDuration(item.duration) : "—"}</span>
+                          <span>{abbreviateLicense(item.license)}</span>
                         </div>
                         {audioFile && (
                           <div className="mini-player">
@@ -1455,15 +1652,207 @@ export default function Home() {
                               +
                             </button>
                           )}
-                          {audioFile && (
-                            <button
-                              className="btn-card btn-card-crop"
-                              onClick={() => openCrop(audioFile.url, item.title)}
-                              title="Crop sound"
-                            >
-                              Crop
-                            </button>
-                          )}
+                            {audioFile && (
+                              <button
+                                className={`btn-card btn-card-crop`}
+                                onClick={() => openCrop(audioFile.url, item.title)}
+                                title="Crop sound"
+                              >
+                                ✂
+                              </button>
+                            )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {group.soundBibleResults.length > 0 && (
+              <>
+                <div
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#00b894",
+                    marginBottom: "0.5rem",
+                    marginTop: "1rem",
+                  }}
+                >
+                  SoundBible ({group.soundBibleResults.length})
+                  {group.soundBibleError && (
+                    <span style={{ color: "#ff6666" }}>
+                      {" "}
+                      &mdash; {group.soundBibleError}
+                    </span>
+                  )}
+                </div>
+                <div className="sound-cards">
+                  {group.soundBibleResults.map((item, si) => {
+                    const uid = `sb-${item.id}-${si}`;
+                    const inPack = isInPack(uid);
+                    return (
+                      <div key={uid} className="sound-card">
+                        <div
+                          className="sound-card-name"
+                          title={item.title}
+                        >
+                          {item.title}
+                        </div>
+                        <div className="sound-card-meta">
+                          <span>{item.duration > 0 ? formatDuration(item.duration) : "—"}</span>
+                          <span>{abbreviateLicense(item.license)}</span>
+                        </div>
+                        {item.audioUrl && (
+                          <div className="mini-player">
+                            <audio
+                              ref={(el) => {
+                                if (el) el.volume = 0.8;
+                              }}
+                              controls
+                              preload="none"
+                              src={item.audioUrl}
+                              className="mini-audio"
+                            />
+                          </div>
+                        )}
+                        {item.audioUrl && showAllWaveforms && (
+                          <MiniWaveform url={item.audioUrl} />
+                        )}
+                        <div className="sound-card-actions">
+                          <button
+                            className="btn-card btn-card-primary"
+                            onClick={() =>
+                              handleDownload(
+                                item.audioUrl,
+                                item.filename
+                              )
+                            }
+                          >
+                            Download
+                          </button>
+                          <a
+                            className="btn-card"
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Open
+                          </a>
+                          <button
+                            className={`btn-card btn-pack-add ${inPack ? "pack-added" : ""}`}
+                            onClick={() =>
+                              togglePack({
+                                uid,
+                                name: item.title,
+                                url: item.audioUrl,
+                                filename: item.filename,
+                                source: "SoundBible",
+                              })
+                            }
+                            title={inPack ? "Remove from pack" : "Add to pack"}
+                          >
+                            +
+                          </button>
+                          <button
+                            className="btn-card btn-card-crop"
+                            onClick={() => openCrop(item.audioUrl, item.title)}
+                            title="Crop sound"
+                          >
+                            ✂
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {group.sonnissResults.length > 0 && (
+              <>
+                <div
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#fdcb6e",
+                    marginBottom: "0.5rem",
+                    marginTop: "1rem",
+                  }}
+                >
+                  Sonniss ({group.sonnissResults.length})
+                  {group.sonnissError && (
+                    <span style={{ color: "#ff6666" }}>
+                      {" "}
+                      &mdash; {group.sonnissError}
+                    </span>
+                  )}
+                </div>
+                <div className="sound-cards">
+                  {group.sonnissResults.map((item, si) => {
+                    const uid = `sonniss-${item.id}-${si}`;
+                    const inPack = isInPack(uid);
+                    return (
+                      <div key={uid} className="sound-card">
+                        <div className="sound-card-name" title={item.title}>
+                          {item.title}
+                        </div>
+                        <div className="sound-card-meta">
+                          <span>{item.duration > 0 ? formatDuration(item.duration) : "—"}</span>
+                          <span>{abbreviateLicense(item.license)}</span>
+                        </div>
+                        {item.audioUrl && (
+                          <div className="mini-player">
+                            <audio
+                              ref={(el) => {
+                                if (el) el.volume = 0.8;
+                              }}
+                              controls
+                              preload="none"
+                              src={item.audioUrl}
+                              className="mini-audio"
+                            />
+                          </div>
+                        )}
+                        {item.audioUrl && showAllWaveforms && (
+                          <MiniWaveform url={item.audioUrl} />
+                        )}
+                        <div className="sound-card-actions">
+                          <button
+                            className="btn-card btn-card-primary"
+                            onClick={() => handleDownload(item.audioUrl, item.filename)}
+                          >
+                            Download
+                          </button>
+                          <a
+                            className="btn-card"
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Open
+                          </a>
+                          <button
+                            className={`btn-card btn-pack-add ${inPack ? "pack-added" : ""}`}
+                            onClick={() =>
+                              togglePack({
+                                uid,
+                                name: item.title,
+                                url: item.audioUrl,
+                                filename: item.filename,
+                                source: "Sonniss",
+                              })
+                            }
+                            title={inPack ? "Remove from pack" : "Add to pack"}
+                          >
+                            +
+                          </button>
+                          <button
+                            className="btn-card btn-card-crop"
+                            onClick={() => openCrop(item.audioUrl, item.title)}
+                            title="Crop sound"
+                          >
+                            ✂
+                          </button>
                         </div>
                       </div>
                     );
@@ -1474,7 +1863,9 @@ export default function Home() {
 
             {group.ogaError &&
               group.ogaResults.length === 0 &&
-              group.results.length === 0 && (
+              group.results.length === 0 &&
+              group.soundBibleResults.length === 0 &&
+              group.sonnissResults.length === 0 && (
                 <div
                   style={{
                     fontSize: "0.75rem",
@@ -1483,6 +1874,36 @@ export default function Home() {
                   }}
                 >
                   OGA: {group.ogaError}
+                </div>
+              )}
+            {group.soundBibleError &&
+              group.soundBibleResults.length === 0 &&
+              group.ogaResults.length === 0 &&
+              group.results.length === 0 &&
+              group.sonnissResults.length === 0 && (
+                <div
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#ff6666",
+                    marginBottom: "0.5rem",
+                  }}
+                >
+                  SoundBible: {group.soundBibleError}
+                </div>
+              )}
+            {group.sonnissError &&
+              group.sonnissResults.length === 0 &&
+              group.soundBibleResults.length === 0 &&
+              group.ogaResults.length === 0 &&
+              group.results.length === 0 && (
+                <div
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#ff6666",
+                    marginBottom: "0.5rem",
+                  }}
+                >
+                  Sonniss: {group.sonnissError}
                 </div>
               )}
           </div>
