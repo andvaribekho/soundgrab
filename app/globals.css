@@ -184,6 +184,70 @@ td input:focus {
   border-color: #6c5ce7;
 }
 
+.name-field {
+  width: 100%;
+  min-height: 37px;
+  padding: 0.2rem 0.35rem 0.2rem 0.65rem;
+  border: 1px solid #2a2a2a;
+  border-radius: 5px;
+  background: #181818;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  transition: border-color 0.15s;
+}
+
+.name-field:focus-within {
+  border-color: #6c5ce7;
+}
+
+td input.name-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+td input.name-input:focus {
+  border-color: transparent;
+}
+
+.style-inline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 45%;
+  padding: 0.12rem 0.2rem 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: #6c5ce7;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.style-inline-remove {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0;
+}
+
+.style-inline-remove:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 .row-num {
   width: 40px;
   color: #555;
@@ -307,6 +371,20 @@ td input:focus {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.sound-card-name-playing {
+  color: #00b894;
+}
+
+.speaker-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: #00b894;
 }
 
 .sound-card-meta {

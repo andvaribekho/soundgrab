@@ -70,6 +70,22 @@ interface PackItem {
   source: string;
 }
 
+const STYLE_PRESETS = [
+  "arcade",
+  "8-bit",
+  "game",
+  "realistic",
+  "cinematic",
+  "sci-fi",
+  "fantasy",
+  "horror",
+  "cartoon",
+  "foley",
+  "swoosh",
+  "spell",
+  "UI",
+];
+
 interface SearchResponse {
   count: number;
   results: SoundResult[];
@@ -104,9 +120,26 @@ interface GroupedResults {
   sonnissError?: string;
 }
 
-
-
 // ─── Mini waveform component ───
+
+function SpeakerIcon() {
+  return (
+    <svg
+      className="speaker-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+    </svg>
+  );
+}
 
 function MiniWaveform({
   url,
@@ -230,19 +263,23 @@ function encodeWav(audioBuffer: AudioBuffer): Blob {
 }
 
 export default function Home() {
+  const [style, setStyle] = useState("");
   const [perEntry, setPerEntry] = useState(4);
   const [useFreeSound, setUseFreeSound] = useState(true);
   const [useOga, setUseOga] = useState(false);
   const [useSoundBible, setUseSoundBible] = useState(false);
   const [useSonniss, setUseSonniss] = useState(false);
   const [entries, setEntries] = useState<SoundEntry[]>([
-    { id: crypto.randomUUID(), name: "", useVariants: true },
+    { id: crypto.randomUUID(), name: "", useVariants: false },
   ]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [groupedResults, setGroupedResults] = useState<GroupedResults[]>([]);
   const [error, setError] = useState("");
   const [showAllWaveforms, setShowAllWaveforms] = useState(false);
+  const [playingSoundUids, setPlayingSoundUids] = useState<Set<string>>(
+    () => new Set()
+  );
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Pack state
@@ -290,6 +327,15 @@ export default function Home() {
   };
 
   const isInPack = (uid: string) => pack.some((p) => p.uid === uid);
+
+  const setSoundPlaying = (uid: string, playing: boolean) => {
+    setPlayingSoundUids((prev) => {
+      const next = new Set(prev);
+      if (playing) next.add(uid);
+      else next.delete(uid);
+      return next;
+    });
+  };
 
   const togglePack = (item: PackItem) => {
     setPack((prev) => {
@@ -786,7 +832,7 @@ export default function Home() {
   };
 
   const addRow = () => {
-    setEntries((prev) => [...prev, { id: crypto.randomUUID(), name: "", useVariants: true }]);
+    setEntries((prev) => [...prev, { id: crypto.randomUUID(), name: "", useVariants: false }]);
   };
 
   const removeRow = (id: string) => {
@@ -823,7 +869,7 @@ export default function Home() {
     if (allTerms.length === 0) return;
 
     e.preventDefault();
-    setEntries(allTerms.map((name) => ({ id: crypto.randomUUID(), name, useVariants: true })));
+    setEntries(allTerms.map((name) => ({ id: crypto.randomUUID(), name, useVariants: false })));
   }, []);
 
   useEffect(() => {
@@ -844,7 +890,7 @@ export default function Home() {
         allTerms.push(...cols);
       }
       if (allTerms.length === 0) return;
-      setEntries(allTerms.map((name) => ({ id: crypto.randomUUID(), name, useVariants: true })));
+      setEntries(allTerms.map((name) => ({ id: crypto.randomUUID(), name, useVariants: false })));
       showToast(`Pasted ${allTerms.length} entries`);
     } catch {
       showToast("Clipboard access denied");
@@ -860,7 +906,7 @@ export default function Home() {
     );
 
     if (validEntries.length === 0) {
-      setError("Add at least one sound name");
+      setError("add at least one sound name on the list");
       return;
     }
 
@@ -876,6 +922,7 @@ export default function Home() {
 
     for (let i = 0; i < validEntries.length; i++) {
       const entry = validEntries[i];
+      const query = style ? `${entry.name.trim()} ${style}` : entry.name.trim();
       const group: GroupedResults = {
         entry,
         results: [],
@@ -891,7 +938,7 @@ export default function Home() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              term: entry.name.trim(),
+              term: query,
               count: perEntry,
               useVariants: entry.useVariants,
             }),
@@ -915,7 +962,7 @@ export default function Home() {
           const ogaRes = await fetch("/api/oga-search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: entry.name.trim(), count: perEntry, useVariants: entry.useVariants }),
+            body: JSON.stringify({ query, count: perEntry, useVariants: entry.useVariants }),
           });
 
           if (!ogaRes.ok) {
@@ -935,7 +982,7 @@ export default function Home() {
           const sbRes = await fetch("/api/soundbible-search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: entry.name.trim(), count: perEntry, useVariants: entry.useVariants }),
+            body: JSON.stringify({ query, count: perEntry, useVariants: entry.useVariants }),
           });
 
           if (!sbRes.ok) {
@@ -955,7 +1002,7 @@ export default function Home() {
           const sonnissRes = await fetch("/api/sonniss-search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: entry.name.trim(), count: perEntry, useVariants: entry.useVariants }),
+            body: JSON.stringify({ query, count: perEntry, useVariants: entry.useVariants }),
           });
 
           if (!sonnissRes.ok) {
@@ -1261,9 +1308,9 @@ export default function Home() {
         </div>
       )}
 
-      <h1>SoundGrab 0.3</h1>
+      <h1>SoundGrab 0.38</h1>
       <p className="subtitle">
-        Search FreeSound, OpenGameArt, SoundBible &amp; Sonniss and download sounds in bulk
+        Search FreeSound, OpenGameArt, SoundBible &amp; Sonniss by style and download sounds in bulk
         &mdash;{" "}
         <span style={{ color: "#6c5ce7" }}>
           Ctrl+V to paste from spreadsheet
@@ -1295,6 +1342,18 @@ export default function Home() {
           />
           Waveform
         </label>
+      </div>
+
+      <div className="preset-row">
+        {STYLE_PRESETS.map((preset) => (
+          <button
+            key={preset}
+            className={`preset-btn ${style === preset ? "preset-active" : ""}`}
+            onClick={() => setStyle(style === preset ? "" : preset)}
+          >
+            {preset}
+          </button>
+        ))}
       </div>
 
       <div className="source-row">
@@ -1338,7 +1397,7 @@ export default function Home() {
             <tr>
               <th className="row-num">#</th>
               <th>Sound Name</th>
-              <th style={{ width: 30, textAlign: "center" }} title="Include alternate search terms">ALT</th>
+              <th style={{ width: 30, textAlign: "center" }} title="Include variants for broader search results">VAR</th>
               <th className="col-actions"></th>
             </tr>
           </thead>
@@ -1347,18 +1406,35 @@ export default function Home() {
               <tr key={entry.id}>
                 <td className="row-num">{idx + 1}</td>
                 <td>
-                  <input
-                    type="text"
-                    value={entry.name}
-                    onChange={(e) => updateName(entry.id, e.target.value)}
-                    placeholder="e.g. jump, laser, explosion..."
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleSearch();
-                      }
-                    }}
-                  />
+                  <div className="name-field">
+                    <input
+                      className="name-input"
+                      type="text"
+                      value={entry.name}
+                      onChange={(e) => updateName(entry.id, e.target.value)}
+                      placeholder="e.g. jump, laser, explosion..."
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addRow();
+                        }
+                      }}
+                    />
+                    {style && (
+                      <span className="style-inline-badge">
+                        {style}
+                        <button
+                          type="button"
+                          className="style-inline-remove"
+                          onClick={() => setStyle("")}
+                          aria-label="Remove style"
+                          title="Remove style"
+                        >
+                          x
+                        </button>
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td style={{ textAlign: "center" }}>
                   <input
@@ -1373,7 +1449,7 @@ export default function Home() {
                         )
                       )
                     }
-                    title="Use alternate search terms for this entry"
+                    title="Include variants for this entry"
                     style={{ accentColor: "#6c5ce7", width: 14, height: 14 }}
                   />
                 </td>
@@ -1470,13 +1546,16 @@ export default function Home() {
                   {group.results.map((sound) => {
                     const previewUrl = getPreviewUrl(sound.previews);
                     const uid = `fs-${sound.id}`;
+                    const playUid = `${group.entry.id}-${uid}`;
+                    const isPlaying = playingSoundUids.has(playUid);
                     const inPack = isInPack(uid);
                     return (
                       <div key={sound.id} className="sound-card">
                         <div
-                          className="sound-card-name"
+                          className={`sound-card-name ${isPlaying ? "sound-card-name-playing" : ""}`}
                           title={sound.name}
                         >
+                          {isPlaying && <SpeakerIcon />}
                           {sound.name}
                         </div>
                         <div className="sound-card-meta">
@@ -1493,6 +1572,9 @@ export default function Home() {
                               preload="none"
                               src={previewUrl}
                               className="mini-audio"
+                              onPlay={() => setSoundPlaying(playUid, true)}
+                              onPause={() => setSoundPlaying(playUid, false)}
+                              onEnded={() => setSoundPlaying(playUid, false)}
                             />
                           </div>
                         )}
@@ -1584,13 +1666,16 @@ export default function Home() {
                         f.name.endsWith(".m4a")
                     );
                     const uid = `oga-${item.id}-${oi}`;
+                    const playUid = `${group.entry.id}-${uid}`;
+                    const isPlaying = playingSoundUids.has(playUid);
                     const inPack = isInPack(uid);
                     return (
                       <div key={oi} className="sound-card">
                         <div
-                          className="sound-card-name"
+                          className={`sound-card-name ${isPlaying ? "sound-card-name-playing" : ""}`}
                           title={item.title}
                         >
+                          {isPlaying && <SpeakerIcon />}
                           {item.title}
                         </div>
                         <div className="sound-card-meta">
@@ -1607,6 +1692,9 @@ export default function Home() {
                               preload="none"
                               src={audioFile.url}
                               className="mini-audio"
+                              onPlay={() => setSoundPlaying(playUid, true)}
+                              onPause={() => setSoundPlaying(playUid, false)}
+                              onEnded={() => setSoundPlaying(playUid, false)}
                             />
                           </div>
                         )}
@@ -1690,13 +1778,16 @@ export default function Home() {
                 <div className="sound-cards">
                   {group.soundBibleResults.map((item, si) => {
                     const uid = `sb-${item.id}-${si}`;
+                    const playUid = `${group.entry.id}-${uid}`;
+                    const isPlaying = playingSoundUids.has(playUid);
                     const inPack = isInPack(uid);
                     return (
                       <div key={uid} className="sound-card">
                         <div
-                          className="sound-card-name"
+                          className={`sound-card-name ${isPlaying ? "sound-card-name-playing" : ""}`}
                           title={item.title}
                         >
+                          {isPlaying && <SpeakerIcon />}
                           {item.title}
                         </div>
                         <div className="sound-card-meta">
@@ -1713,6 +1804,9 @@ export default function Home() {
                               preload="none"
                               src={item.audioUrl}
                               className="mini-audio"
+                              onPlay={() => setSoundPlaying(playUid, true)}
+                              onPause={() => setSoundPlaying(playUid, false)}
+                              onEnded={() => setSoundPlaying(playUid, false)}
                             />
                           </div>
                         )}
@@ -1790,10 +1884,16 @@ export default function Home() {
                 <div className="sound-cards">
                   {group.sonnissResults.map((item, si) => {
                     const uid = `sonniss-${item.id}-${si}`;
+                    const playUid = `${group.entry.id}-${uid}`;
+                    const isPlaying = playingSoundUids.has(playUid);
                     const inPack = isInPack(uid);
                     return (
                       <div key={uid} className="sound-card">
-                        <div className="sound-card-name" title={item.title}>
+                        <div
+                          className={`sound-card-name ${isPlaying ? "sound-card-name-playing" : ""}`}
+                          title={item.title}
+                        >
+                          {isPlaying && <SpeakerIcon />}
                           {item.title}
                         </div>
                         <div className="sound-card-meta">
@@ -1810,6 +1910,9 @@ export default function Home() {
                               preload="none"
                               src={item.audioUrl}
                               className="mini-audio"
+                              onPlay={() => setSoundPlaying(playUid, true)}
+                              onPause={() => setSoundPlaying(playUid, false)}
+                              onEnded={() => setSoundPlaying(playUid, false)}
                             />
                           </div>
                         )}
